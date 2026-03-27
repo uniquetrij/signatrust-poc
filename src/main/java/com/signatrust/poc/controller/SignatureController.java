@@ -11,8 +11,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "Digital Signatures", description = "Endpoints for cryptographically signing and verifying PDF documents (DPI PoC)")
 public class SignatureController {
     private static final Logger log = LoggerFactory.getLogger(SignatureController.class);
 
@@ -24,13 +29,14 @@ public class SignatureController {
         this.signatureVerifierService = signatureVerifierService;
     }
 
+    @Operation(summary = "Cryptographically sign a PDF document", description = "Injects an optional visible signature scribble and cryptographically seals the PDF with the Mock HSM private key via CMS/PKCS#7.")
     @PostMapping(value = "/sign", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<byte[]> signPdf(
-            @RequestParam("document") MultipartFile document,
-            @RequestParam(value = "signatureImage", required = false) MultipartFile signatureImage,
-            @RequestParam("signerName") String signerName,
-            @RequestParam("location") String location,
-            HttpServletRequest request) {
+            @Parameter(description = "The original PDF file to be signed") @RequestParam("document") MultipartFile document,
+            @Parameter(description = "Optional transparent PNG image representing a physical signature scribble") @RequestParam(value = "signatureImage", required = false) MultipartFile signatureImage,
+            @Parameter(description = "Full name of the person signing the document") @RequestParam("signerName") String signerName,
+            @Parameter(description = "Location where the signing takes place") @RequestParam("location") String location,
+            @Parameter(hidden = true) HttpServletRequest request) {
 
         try {
             // Context injection
@@ -51,8 +57,10 @@ public class SignatureController {
         }
     }
 
+    @Operation(summary = "Verify a digitally signed PDF", description = "Parses the PDF, extracts the embedded CMS signature block and public certificate, and verifies the cryptographic hash to ensure document integrity.")
     @PostMapping(value = "/verify", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<String> verifyPdf(@RequestParam("document") MultipartFile document) {
+    public ResponseEntity<String> verifyPdf(
+            @Parameter(description = "The digitally signed PDF file to verify") @RequestParam("document") MultipartFile document) {
         try {
             log.info("Received request to verify signed PDF.");
             String verificationResult = signatureVerifierService.verifyPdf(document.getBytes());
