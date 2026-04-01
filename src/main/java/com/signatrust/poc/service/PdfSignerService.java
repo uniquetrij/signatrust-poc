@@ -36,41 +36,7 @@ public class PdfSignerService {
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
             // 1. Visible Layer: Draw the user's scribble to the PDF *before* calculating the hash.
-            // This ensures the visual element is cryptographically sealed by the signature.
-            if (signatureImage != null && signatureImage.length > 0 && placements != null && !placements.isEmpty()) {
-                PDImageXObject pdImage = PDImageXObject.createFromByteArray(document, signatureImage, "scribble");
-                float imgWidth = 150;
-                float imgHeight = (pdImage.getHeight() / (float) pdImage.getWidth()) * imgWidth;
-                
-                int totalPages = document.getNumberOfPages();
-
-                for (SignaturePlacement placement : placements) {
-                    int pageIdx = (placement.getPageNumber() <= 0 || placement.getPageNumber() > totalPages) ? totalPages - 1 : placement.getPageNumber() - 1;
-                    PDPage targetPage = document.getPage(pageIdx);
-                    
-                    try (PDPageContentStream contentStream = new PDPageContentStream(document, targetPage, PDPageContentStream.AppendMode.APPEND, true, true)) {
-                        contentStream.saveGraphicsState();
-                        Matrix matrix = Matrix.getTranslateInstance(placement.getPositionX(), placement.getPositionY());
-                        matrix.rotate(Math.toRadians(placement.getRotation()));
-                        contentStream.transform(matrix);
-    
-                        contentStream.drawImage(pdImage, 0, 0, imgWidth, imgHeight);
-    
-                        // Overlay metadata text automatically below the signature
-                        contentStream.beginText();
-                        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
-                        contentStream.newLineAtOffset(0, -10);
-                        contentStream.showText("Digitally signed by: " + signerName);
-                        contentStream.newLineAtOffset(0, -10);
-                        contentStream.showText("Date: " + Calendar.getInstance().getTime());
-                        contentStream.newLineAtOffset(0, -10);
-                        contentStream.showText("Location: " + location + " | IP: " + ipAddress);
-                        contentStream.endText();
-                        
-                        contentStream.restoreGraphicsState();
-                    }
-                }
-            }
+            applyVisualStamps(document, signatureImage, signerName, location, ipAddress, placements);
 
             // 2. Cryptographic Metadata Layer
             PDSignature signature = new PDSignature();
@@ -99,6 +65,57 @@ public class PdfSignerService {
             externalSigning.setSignature(cmsSignature);
 
             return baos.toByteArray();
+        }
+    }
+
+    public byte[] previewPdf(byte[] originalPdf, byte[] signatureImage, String signerName, String location, String ipAddress,
+                             List<SignaturePlacement> placements) throws Exception {
+        try (PDDocument document = Loader.loadPDF(originalPdf);
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+
+            // Purely structural visible layer without cryptographic signing blocks
+            applyVisualStamps(document, signatureImage, signerName, location, ipAddress, placements);
+            document.save(baos);
+            return baos.toByteArray();
+        }
+    }
+
+    private void applyVisualStamps(PDDocument document, byte[] signatureImage, String signerName, String location, String ipAddress, List<SignaturePlacement> placements) throws Exception {
+        if (signatureImage == null || signatureImage.length == 0 || placements == null || placements.isEmpty()) {
+            return;
+        }
+        
+        PDImageXObject pdImage = PDImageXObject.createFromByteArray(document, signatureImage, "scribble");
+        float imgWidth = 150;
+        float imgHeight = (pdImage.getHeight() / (float) pdImage.getWidth()) * imgWidth;
+        
+        int totalPages = document.getNumberOfPages();
+
+        for (SignaturePlacement placement : placements) {
+            int pageIdx = (placement.getPageNumber() <= 0 || placement.getPageNumber() > totalPages) ? totalPages - 1 : placement.getPageNumber() - 1;
+            PDPage targetPage = document.getPage(pageIdx);
+            
+            try (PDPageContentStream contentStream = new PDPageContentStream(document, targetPage, PDPageContentStream.AppendMode.APPEND, true, true)) {
+                contentStream.saveGraphicsState();
+                Matrix matrix = Matrix.getTranslateInstance(placement.getPositionX(), placement.getPositionY());
+                matrix.rotate(Math.toRadians(placement.getRotation()));
+                contentStream.transform(matrix);
+
+                contentStream.drawImage(pdImage, 0, 0, imgWidth, imgHeight);
+
+                // Overlay metadata text automatically below the signature
+                contentStream.beginText();
+                contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
+                contentStream.newLineAtOffset(0, -10);
+                contentStream.showText("Digitally signed by: " + signerName);
+                contentStream.newLineAtOffset(0, -10);
+                contentStream.showText("Date: " + Calendar.getInstance().getTime());
+                contentStream.newLineAtOffset(0, -10);
+                contentStream.showText("Location: " + location + " | IP: " + ipAddress);
+                contentStream.endText();
+                
+                contentStream.restoreGraphicsState();
+            }
         }
     }
 }
