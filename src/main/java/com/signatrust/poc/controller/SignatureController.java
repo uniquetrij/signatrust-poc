@@ -45,7 +45,14 @@ public class SignatureController {
 
         try {
             // Context injection
-            String ipAddress = request.getRemoteAddr();
+            String ipAddress = request.getHeader("X-Forwarded-For");
+            if (ipAddress == null || ipAddress.isEmpty() || "unknown".equalsIgnoreCase(ipAddress)) {
+                ipAddress = request.getRemoteAddr();
+            }
+            if ("0:0:0:0:0:0:0:1".equals(ipAddress)) {
+                ipAddress = "127.0.0.1";
+            }
+
             byte[] imageBytes = signatureImage != null ? signatureImage.getBytes() : null;
 
             ObjectMapper mapper = new ObjectMapper();
