@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.io.ByteArrayOutputStream;
+import java.util.Collections;
+import com.signatrust.poc.dto.SignaturePlacement;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -42,8 +44,14 @@ class SignatrustApplicationTests {
             dummyPdf = baos.toByteArray();
         }
 
+        SignaturePlacement placement = new SignaturePlacement();
+        placement.setPageNumber(1);
+        placement.setPositionX(50f);
+        placement.setPositionY(50f);
+        placement.setRotation(0f);
+
         // 2. Sign the PDF using our service (We omit the optional image for this automated test)
-        byte[] signedPdf = pdfSignerService.signPdf(dummyPdf, null, "Automated Test Runner", "JUnit Test Env", "127.0.0.1");
+        byte[] signedPdf = pdfSignerService.signPdf(dummyPdf, null, "Automated Test Runner", "JUnit Test Env", "127.0.0.1", Collections.singletonList(placement));
         
         assertNotNull(signedPdf, "Signed PDF bytes should not be null");
         assertTrue(signedPdf.length > dummyPdf.length, "Signed PDF must be larger than original due to the embedded CMS/PKCS#7 cryptographic block");

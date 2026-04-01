@@ -10,6 +10,12 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import com.signatrust.poc.dto.SignaturePlacement;
+import com.signatrust.poc.dto.SignRequestDto;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.util.Collections;
+import java.util.List;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -32,10 +38,9 @@ public class SignatureController {
     @Operation(summary = "Cryptographically sign a PDF document", description = "Injects an optional visible signature scribble and cryptographically seals the PDF with the Mock HSM private key via CMS/PKCS#7.")
     @PostMapping(value = "/sign", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<byte[]> signPdf(
-            @Parameter(description = "The original PDF file to be signed") @RequestParam("document") MultipartFile document,
-            @Parameter(description = "Optional transparent PNG image representing a physical signature scribble") @RequestParam(value = "signatureImage", required = false) MultipartFile signatureImage,
-            @Parameter(description = "Full name of the person signing the document") @RequestParam("signerName") String signerName,
-            @Parameter(description = "Location where the signing takes place") @RequestParam("location") String location,
+            @Parameter(description = "The original PDF file to be signed") @RequestPart("document") MultipartFile document,
+            @Parameter(description = "Optional transparent PNG image representing a physical signature scribble") @RequestPart(value = "signatureImage", required = false) MultipartFile signatureImage,
+            @Parameter(description = "Signer metadata and placement configuration wrapped in JSON") @RequestPart("signRequest") String signRequestStr,
             @Parameter(hidden = true) HttpServletRequest request) {
 
         try {
@@ -43,8 +48,25 @@ public class SignatureController {
             String ipAddress = request.getRemoteAddr();
             byte[] imageBytes = signatureImage != null ? signatureImage.getBytes() : null;
 
+            ObjectMapper mapper = new ObjectMapper();
+            SignRequestDto signRequest = mapper.readValue(signRequestStr, SignRequestDto.class);
+
+            String signerName = signRequest.getSignerName();
+            String location = signRequest.getLocation();
+            List<SignaturePlacement> placements = signRequest.getPlacements();
+
+            if (placements == null || placements.isEmpty()) {
+                // Backward compatibility / simplified testing default
+                SignaturePlacement defaultPlacement = new SignaturePlacement();
+                defaultPlacement.setPageNumber(1);
+                defaultPlacement.setPositionX(50f);
+                defaultPlacement.setPositionY(50f);
+                defaultPlacement.setRotation(0f);
+                placements = Collections.singletonList(defaultPlacement);
+            }
+
             log.info("Received request to sign PDF for {}", signerName);
-            byte[] signedPdf = pdfSignerService.signPdf(document.getBytes(), imageBytes, signerName, location, ipAddress);
+            byte[] signedPdf = pdfSignerService.signPdf(document.getBytes(), imageBytes, signerName, location, ipAddress, placements);
 
             long now = System.currentTimeMillis();
             return ResponseEntity.ok()

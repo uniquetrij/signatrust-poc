@@ -11,11 +11,14 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.ExternalSigningSupport;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.PDSignature;
+import org.apache.pdfbox.util.Matrix;
 import org.springframework.stereotype.Service;
+import com.signatrust.poc.dto.SignaturePlacement;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.util.Calendar;
+import java.util.List;
 
 @Service
 public class PdfSignerService {
@@ -27,32 +30,45 @@ public class PdfSignerService {
         this.keystoreService = keystoreService;
     }
 
-    public byte[] signPdf(byte[] originalPdf, byte[] signatureImage, String signerName, String location, String ipAddress) throws Exception {
+    public byte[] signPdf(byte[] originalPdf, byte[] signatureImage, String signerName, String location, String ipAddress,
+                          List<SignaturePlacement> placements) throws Exception {
         try (PDDocument document = Loader.loadPDF(originalPdf);
              ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
 
             // 1. Visible Layer: Draw the user's scribble to the PDF *before* calculating the hash.
             // This ensures the visual element is cryptographically sealed by the signature.
-            if (signatureImage != null && signatureImage.length > 0) {
-                // For PoC, we just append it to the bottom-left of the first page.
-                PDPage firstPage = document.getPage(0);
+            if (signatureImage != null && signatureImage.length > 0 && placements != null && !placements.isEmpty()) {
                 PDImageXObject pdImage = PDImageXObject.createFromByteArray(document, signatureImage, "scribble");
+                float imgWidth = 150;
+                float imgHeight = (pdImage.getHeight() / (float) pdImage.getWidth()) * imgWidth;
+                
+                int totalPages = document.getNumberOfPages();
 
-                try (PDPageContentStream contentStream = new PDPageContentStream(document, firstPage, PDPageContentStream.AppendMode.APPEND, true, true)) {
-                    float imgWidth = 150;
-                    float imgHeight = (pdImage.getHeight() / (float) pdImage.getWidth()) * imgWidth;
-                    contentStream.drawImage(pdImage, 50, 50, imgWidth, imgHeight);
-
-                    // Overlay metadata text automatically below the signature
-                    contentStream.beginText();
-                    contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
-                    contentStream.newLineAtOffset(50, 40);
-                    contentStream.showText("Digitally signed by: " + signerName);
-                    contentStream.newLineAtOffset(0, -10);
-                    contentStream.showText("Date: " + Calendar.getInstance().getTime());
-                    contentStream.newLineAtOffset(0, -10);
-                    contentStream.showText("Location: " + location + " | IP: " + ipAddress);
-                    contentStream.endText();
+                for (SignaturePlacement placement : placements) {
+                    int pageIdx = (placement.getPageNumber() <= 0 || placement.getPageNumber() > totalPages) ? totalPages - 1 : placement.getPageNumber() - 1;
+                    PDPage targetPage = document.getPage(pageIdx);
+                    
+                    try (PDPageContentStream contentStream = new PDPageContentStream(document, targetPage, PDPageContentStream.AppendMode.APPEND, true, true)) {
+                        contentStream.saveGraphicsState();
+                        Matrix matrix = Matrix.getTranslateInstance(placement.getPositionX(), placement.getPositionY());
+                        matrix.rotate(Math.toRadians(placement.getRotation()));
+                        contentStream.transform(matrix);
+    
+                        contentStream.drawImage(pdImage, 0, 0, imgWidth, imgHeight);
+    
+                        // Overlay metadata text automatically below the signature
+                        contentStream.beginText();
+                        contentStream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 8);
+                        contentStream.newLineAtOffset(0, -10);
+                        contentStream.showText("Digitally signed by: " + signerName);
+                        contentStream.newLineAtOffset(0, -10);
+                        contentStream.showText("Date: " + Calendar.getInstance().getTime());
+                        contentStream.newLineAtOffset(0, -10);
+                        contentStream.showText("Location: " + location + " | IP: " + ipAddress);
+                        contentStream.endText();
+                        
+                        contentStream.restoreGraphicsState();
+                    }
                 }
             }
 
